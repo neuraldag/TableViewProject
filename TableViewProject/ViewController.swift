@@ -11,20 +11,18 @@ class ViewController: UIViewController {
     
     var tableView = UITableView()
     var shuffleButton = UIBarButtonItem()
-    var cleanButton = UIBarButtonItem()
     
-    var dataSource: UITableViewDiffableDataSource<Section, Number>!
-    var numArray = [Number]()
+    var dataSource: UITableViewDiffableDataSource<Section, Row>!
     
     enum Section {
         case first
     }
     
-    struct Number: Hashable {
+    struct Row: Hashable, Sendable {
         var number: Int
+        var selected: Bool
     }
-
-    
+    var rowArray = [Row]()
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -36,8 +34,8 @@ class ViewController: UIViewController {
         createBarButtons()
         
         for i in 0...30 {
-            let num = Number(number: i + 1)
-            self.numArray.append(num)
+            let row = Row(number: i, selected: false)
+            self.rowArray.append(row)
             self.updateDatasource()
         }
     }
@@ -49,6 +47,7 @@ class ViewController: UIViewController {
         tableView.delegate = self
         tableView.layer.cornerRadius = 10
         tableView.translatesAutoresizingMaskIntoConstraints = false
+        tableView.allowsMultipleSelection = true
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "myCell")
         
         let constraints = [
@@ -62,39 +61,25 @@ class ViewController: UIViewController {
         
         dataSource = UITableViewDiffableDataSource(tableView: tableView, cellProvider: { tableView, indexPath, itemIdentifier in
             let cell = tableView.dequeueReusableCell(withIdentifier: "myCell", for: indexPath)
-            
-            let randomedNum = self.numArray.shuffled()
-    
+
             var configurationCell = cell.defaultContentConfiguration()
             configurationCell.text = "\(itemIdentifier.number)"
             cell.contentConfiguration = configurationCell
+            cell.accessoryType = itemIdentifier.selected ? .checkmark : .none
             
             return cell
         })
     }
     
     
-    
     private func createBarButtons() {
         shuffleButton = .init(title: "Shuffle", style: .plain, target: self, action: #selector(shuffleNums))
         navigationItem.rightBarButtonItem = shuffleButton
-        
-        cleanButton = .init(title: "Clean", style: .plain, target: self, action: #selector(cleanChecks))
-        navigationItem.leftBarButtonItem = cleanButton
     }
-
-    
     
     @objc func shuffleNums() {
-        numArray.shuffle()
+        rowArray.shuffle()
         updateDatasource()
-    }
-    
-    @objc func cleanChecks() {
-        let totalRows = tableView.numberOfRows(inSection: 0)
-        for row in 0..<totalRows {
-            tableView.cellForRow(at: .SubSequence(row: row, section: 0))?.accessoryType = .none
-        }
     }
 }
 
@@ -104,34 +89,29 @@ extension ViewController: UITableViewDelegate {
     
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.selectRow(at: indexPath, animated: true, scrollPosition: .none)
-
-        if tableView.cellForRow(at: indexPath)?.accessoryType == .checkmark {
-            tableView.cellForRow(at: indexPath)?.accessoryType = .none
-            tableView.deselectRow(at: indexPath, animated: true)
+        
+        rowArray[indexPath.row].selected = !rowArray[indexPath.row].selected
+        
+        if rowArray[indexPath.row].selected {
+            let selectedNumber = rowArray[indexPath.row]
+            rowArray.remove(at: indexPath.row)
+            rowArray.insert(selectedNumber, at: 0)
+            dataSource.defaultRowAnimation = .top
+            updateDatasource()
         } else {
-            tableView.cellForRow(at: indexPath)?.accessoryType = .checkmark
-            tableView.deselectRow(at: indexPath, animated: true)
-            
-            if var snap = self.dataSource?.snapshot() {
-                let selectedNum = snap.itemIdentifiers[indexPath.row]
-                snap.deleteItems([selectedNum])
-                snap.insertItems([selectedNum], beforeItem: snap.itemIdentifiers.first ?? .init(number: 1))
-                self.dataSource?.apply(snap, animatingDifferences: true)
-            }
-            
+            dataSource.defaultRowAnimation = .none
+            updateDatasource()
         }
+
+        tableView.deselectRow(at: indexPath, animated: true)
     }
     
     func updateDatasource() {
-        var snapshot = NSDiffableDataSourceSnapshot<Section, Number>()
+        var snapshot = NSDiffableDataSourceSnapshot<Section, Row>()
+        snapshot.deleteAllItems()
         snapshot.appendSections([.first])
-        snapshot.appendItems(numArray)
+        snapshot.appendItems(rowArray)
         
         dataSource.apply(snapshot, animatingDifferences: true)
     }
 }
-
-
-//    - По нажатию на ячейку она анимировано перемещается на первое место, а справа появляется галочка.
-//    - Если нажать на ячейку с галочкой, то галочка пропадает.
-//    - Справа вверху кнопка анимировано перемешивает ячейки.
